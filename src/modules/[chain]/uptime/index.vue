@@ -9,7 +9,7 @@ import {
 } from '@/stores';
 import UptimeBar from '@/components/UptimeBar.vue';
 import type { Commit, SlashingParam, SigningInfo } from '@/types';
-import { consensusPubkeyToHexAddress, valconsToBase64 } from '@/libs';
+import { consensusPubkeyToHexAddress, pubKeyToValcons, valconsToBase64 } from '@/libs';
 
 const props = defineProps(['chain']);
 
@@ -25,7 +25,6 @@ const slashingParam = ref({} as SlashingParam);
 
 const signingInfo = ref({} as Record<string, SigningInfo>);
 
-const filterOptout = ref(false);
 // filter validators by keywords
 const validators = computed(() => {
   if (keyword)
@@ -36,26 +35,47 @@ const validators = computed(() => {
 });
 
 const list = computed(() => {
-  const window = Number(slashingParam.value.signed_blocks_window || 0);
-  const vset = validators.value.map((v) => {
-    const signing =
-      signingInfo.value[consensusPubkeyToHexAddress(v.consensus_pubkey)];
-    return {
-      v,
-      signing,
-      hex: toBase64(fromHex(consensusPubkeyToHexAddress(v.consensus_pubkey))),
-      uptime:
-        signing && window > 0
-          ? (window - Number(signing.missed_blocks_counter)) / window
-          : undefined,
-    };
-  });
-  return filterOptout.value ? vset.filter((x) => x.signing) : vset;
+  if(chainStore.isConsumerChain) {
+    stakingStore.loadKeyRotationFromLocalstorage(baseStore.latest?.block?.header?.chain_id)
+
+    const window = Number(slashingParam.value.signed_blocks_window || 0);
+    const vset = validators.value.map((v) => {
+      
+      const hexAddress = stakingStore.findRotatedHexAddress(v.consensus_pubkey)
+      const signing =
+        signingInfo.value[hexAddress];
+      return {
+        v,
+        signing,
+        hex: toBase64(fromHex(hexAddress)),
+        uptime:
+          signing && window > 0
+            ? (window - Number(signing.missed_blocks_counter)) / window
+            : undefined,
+      };
+    });
+    return vset;
+  } else {
+    const window = Number(slashingParam.value.signed_blocks_window || 0);
+    const vset = validators.value.map((v) => {
+      const signing =
+        signingInfo.value[consensusPubkeyToHexAddress(v.consensus_pubkey)];
+      return {
+        v,
+        signing,
+        hex: toBase64(fromHex(consensusPubkeyToHexAddress(v.consensus_pubkey))),
+        uptime:
+          signing && window > 0
+            ? (window - Number(signing.missed_blocks_counter)) / window
+            : undefined,
+      };
+    });
+    return vset;
+  }
 });
 
 onMounted(() => {
   live.value = true;
-
   baseStore.fetchLatest().then((l) => {
     let b = l;
     if (
@@ -113,6 +133,10 @@ const tab = ref('2');
 function changeTab(v: string) {
   tab.value = v;
 }
+
+function fetchAllKeyRotation() {
+  stakingStore.fetchAllKeyRotation(baseStore.latest?.block?.header?.chain_id)
+}
 </script>
 
 <template>
@@ -122,30 +146,33 @@ function changeTab(v: string) {
         class="tab text-gray-400 capitalize"
         :class="{ 'tab-active': tab === '3' }"
         @click="changeTab('3')"
-        >Overall</a
+        >{{ $t('uptime.overall') }}</a
       >
       <a
         class="tab text-gray-400 capitalize"
         :class="{ 'tab-active': tab === '2' }"
         @click="changeTab('2')"
-        >Blocks</a
+        >{{ $t('module.blocks') }}</a
       >
       <RouterLink :to="`/${chain}/uptime/customize`">
-        <a class="tab text-gray-400 capitalize">Customize</a>
+        <a class="tab text-gray-400 capitalize">{{ $t('uptime.customize') }}</a>
       </RouterLink>
     </div>
     <div class="bg-base-100 px-5 pt-5">
       <div class="flex items-center gap-x-4">
-        <label v-if="chainStore.isConsumerChain" class="text-center">
-          <input type="checkbox" v-model="filterOptout" class="checkbox" />
-          Only Consumer Set
-        </label>
         <input
           type="text"
           v-model="keyword"
           placeholder="Keywords to filter validators"
           class="input input-sm w-full flex-1 border border-gray-200 dark:border-gray-600"
         />
+        <button v-if="chainStore.isConsumerChain" class="btn btn-sm btn-primary" @click="fetchAllKeyRotation">Load Rotated Keys</button>
+      </div>
+
+      <div v-if="chainStore.isConsumerChain && Object.keys(stakingStore.keyRotation).length === 0"
+        class="alert alert-warning my-4"
+      >
+        Note: Please load rotated keys to see the correct uptime
       </div>
       <!-- grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-x-4 mt-4 -->
       <div
@@ -153,7 +180,7 @@ function changeTab(v: string) {
         :class="tab === '2' ? '' : 'hidden'"
       >
         <div v-for="({ v, signing, hex }, i) in list" :key="i">
-          <div class="flex items-center justify-between py-0 w-72">
+          <div class="flex items-center justify-between py-0 w-[298px]">
             <label class="truncate text-sm">
               <span class="ml-1 text-black dark:text-white"
                 >{{ i + 1 }}.{{ v.description.moniker }}</span
@@ -161,13 +188,13 @@ function changeTab(v: string) {
             </label>
             <div
               v-if="Number(signing?.missed_blocks_counter || 0) > 10"
-              class="badge badge-sm bg-transparent border-0 text-red-500"
+              class="badge badge-sm bg-transparent border-0 text-red-500 font-bold"
             >
               {{ signing?.missed_blocks_counter }}
             </div>
             <div
               v-else
-              class="badge badge-sm bg-transparent text-green-600 border-0"
+              class="badge badge-sm bg-transparent text-green-600 border-0 font-bold"
             >
               {{ signing?.missed_blocks_counter }}
             </div>
@@ -180,12 +207,12 @@ function changeTab(v: string) {
         <table class="table table-compact w-full mt-5">
           <thead class="capitalize">
             <tr>
-              <td>Validator</td>
-              <td class="text-right">Uptime</td>
-              <td>Last Jailed Time</td>
-              <td class="text-right">Signed Precommits</td>
-              <td class="text-right">Start Height</td>
-              <td>Tombstoned</td>
+              <td>{{ $t('account.validator') }}</td>
+              <td class="text-right">{{ $t('module.uptime') }}</td>
+              <td>{{ $t('uptime.last_jailed_time') }}</td>
+              <td class="text-right">{{ $t('uptime.signed_precommits') }}</td>
+              <td class="text-right">{{ $t('uptime.start_height') }}</td>
+              <td>{{ $t('uptime.tombstoned') }}</td>
             </tr>
           </thead>
           <tr v-for="({ v, signing, uptime }, i) in list" class="hover">
@@ -239,7 +266,7 @@ function changeTab(v: string) {
           <tfoot>
             <tr>
               <td colspan="2" class="text-right">
-                Minimum uptime per window:
+                {{ $t('uptime.minimum_uptime') }}:
                 <span
                   class="lowercase tooltip"
                   :data-tip="`Window size: ${slashingParam.signed_blocks_window}`"

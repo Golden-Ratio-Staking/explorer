@@ -19,12 +19,12 @@ const list = computed(() => {
     <div>
         <div class="tabs tabs-boxed bg-transparent mb-4">
             <a class="tab text-gray-400 uppercase" :class="{ 'tab-active': tab === 'blocks' }"
-                @click="tab = 'blocks'">Recent</a>
+                @click="tab = 'blocks'">{{ $t('block.recent') }}</a>
             <RouterLink class="tab text-gray-400 uppercase" 
                 :to="`/${chain}/block/${Number(base.latest?.block?.header.height||0) + 10000}`"
-                >Future</RouterLink>
+                >{{ $t('block.future') }}</RouterLink>
             <a class="tab text-gray-400 uppercase" :class="{ 'tab-active': tab === 'transactions' }"
-                @click="tab = 'transactions'">Transactions</a>
+                @click="tab = 'transactions'">{{ $t('account.transactions') }}</a>
         </div>
 
         <div v-show="tab === 'blocks'" class="grid xl:!grid-cols-6 md:!grid-cols-4 grid-cols-1 gap-3">
@@ -51,16 +51,16 @@ const list = computed(() => {
 
         <div v-show="tab === 'transactions'" class="bg-base-100 rounded overflow-x-auto">
             <table class="table w-full table-compact">
-                <thead>
+                <thead class="bg-base-200">
                     <tr>
-                        <th style="position: relative; z-index: 2;">Height</th>
-                        <th style="position: relative; z-index: 2;">Hash</th>
-                        <th>Messages</th>
-                        <th>Fees</th>
+                        <th style="position: relative; z-index: 2;">{{ $t('account.height') }}</th>
+                        <th style="position: relative; z-index: 2;">{{ $t('account.hash') }}</th>
+                        <th>{{ $t('account.messages') }}</th>
+                        <th>{{ $t('block.fees') }}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(item, index) in base.txsInRecents" :index="index">
+                    <tr v-for="(item, index) in base.txsInRecents" :index="index" class="hover">
                         <td class="text-sm text-primary">
                             <RouterLink :to="`/${props.chain}/block/${item.height}`">{{ item.height }}</RouterLink>
                         </td>
@@ -77,13 +77,13 @@ const list = computed(() => {
             <div class="p-4">
                 <div class="alert relative bg-transparent">
                     <div class="alert  absolute inset-x-0 inset-y-0 w-full h-full bg-info opacity-10"></div>
-                    <div class="text-info">
+                    <div class="text-info flex gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                             class="stroke-current flex-shrink-0 w-6 h-6">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        <span>Only show txs in recent blocks</span>
+                        <span>{{ $t('block.only_tx') }}</span>
                     </div>
                 </div>
             </div>

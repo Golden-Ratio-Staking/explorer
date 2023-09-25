@@ -16,12 +16,9 @@ import {
 const dashboard = useDashboard();
 const chainStore = useBlockchain()
 const format = useFormatter();
-const editable = ref(false); // to edit addresses
 const sourceAddress = ref(''); //
 const selectedSource = ref({} as LocalKey); //
-function toggleEdit() {
-  editable.value = !editable.value;
-}
+const importStep = ref('step1')
 
 const conf = ref(
   JSON.parse(localStorage.getItem('imported-addresses') || '{}') as Record<
@@ -231,14 +228,14 @@ async function loadBalances(endpoint: string, address: string) {
 </script>
 <template>
   <div>
-    <div class="overflow-x-auto w-full card">
-      <div class="lg:!flex lg:!items-center lg:!justify-between bg-base-100 p-5">
-        <div class="min-w-0 flex-1">
+    <div class="overflow-x-auto w-full rounded-md">
+      <div class="flex flex-wrap justify-between bg-base-100 p-5">
+        <div class="min-w-0">
           <h2 class="text-2xl font-bold leading-7 sm:!truncate sm:!text-3xl sm:!tracking-tight">
             Accounts
           </h2>
           <div class="mt-1 flex flex-col sm:!mt-0 sm:!flex-row sm:!flex-wrap sm:!space-x-6">
-            <div class="mt-2 flex items-center text-sm text-gray-500">
+            <div class="mt-2 items-center text-sm text-gray-500 hidden md:!flex">
               <svg class="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" viewBox="0 0 20 20" fill="currentColor"
                 aria-hidden="true">
                 <path fill-rule="evenodd"
@@ -251,7 +248,7 @@ async function loadBalances(endpoint: string, address: string) {
             </div>
           </div>
         </div>
-        <div class="mt-5 flex flex-col lg:!ml-4 lg:!mt-0 text-right">
+        <div class="flex flex-col text-right">
           <span>Total Value</span>
           <span class="text-xl text-success font-bold">${{ format.formatNumber(totalValue, '0,0.[00]') }}</span>
           <span class="text-sm" :class="format.color(totalChange)">{{ format.formatNumber(totalChange, '+0,0.[00]')
@@ -261,9 +258,9 @@ async function loadBalances(endpoint: string, address: string) {
     </div>
 
     <div class="overflow-x-auto">
-      <div v-for="{ key, subaccounts } in accounts" class="bg-base-100 rounded-xl my-5 py-5 px-2">
+      <div v-for="{ key, subaccounts } in accounts" class="bg-base-100 rounded-md my-5 py-5">
         <div class="flex justify-self-center">
-          <div class="mr-2 p-2">
+          <div class="mx-2 p-2">
             <svg :fill="chainStore.current?.themeColor || '#666CFF'" height="28px" width="28px" version="1.1" id="Capa_1"
               xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 487.5 487.5"
               xml:space="preserve">
@@ -289,7 +286,7 @@ async function loadBalances(endpoint: string, address: string) {
           <div>
             <div class=" max-w-md overflow-hidden"><div class="font-bold">{{ key }}</div></div>
             <div class="dropdown">
-              <label tabindex="0" class="">{{ subaccounts.length }} addresses</label>
+              <label tabindex="0" class=" cursor-pointer">{{ subaccounts.length }} addresses</label>
               <ul tabindex="0" class=" -left-14 dropdown-content menu p-2 shadow bg-base-200 rounded-box z-50">
                 <li v-for="x in subaccounts">
                 <a>
@@ -304,13 +301,12 @@ async function loadBalances(endpoint: string, address: string) {
             </div>
           </div>
         </div>
-        <div class="divider"></div>
+        <div class="p-4 bg-base-200 mt-2">Delegations</div>
         <div>
-          <div class="my-4 ml-6">Delegations</div>
-          <ul class="!menu bg-base-200 w-full rounded-box ">
+          <ul class="!menu w-full">
             <div v-for="x in subaccounts">
               <li v-if="x.delegation.amount">
-                <a>
+                <RouterLink :to="`/${x.account.chainName}/account/${x.account.address}`">
                   <img :src="x.account.logo" class="w-6 h-6 mr-2" />
                   <span class="font-bold">{{ format.formatToken(x.delegation, true, '0,0.[00]', 'all') }} <br><span
                       class="text-xs" :class="format.color(x.delegation.change24h)">{{
@@ -319,17 +315,17 @@ async function loadBalances(endpoint: string, address: string) {
                       class="text-xs" :class="format.color(x.delegation.change24h)">{{
                         format.formatNumber((x.delegation.change24h || 0) * (x.delegation.value || 0) / 100, '+0,0.[00]')
                       }}</span></span>
-                </a>
+                </RouterLink>                
               </li>
             </div>
           </ul>
         </div>
+        <div class="p-4 bg-base-200">Balances</div>
         <div>
-          <div class="my-4 ml-6">Balances</div>
-          <ul class="!menu bg-base-200 w-full rounded-box ">
+          <ul class="!menu w-full">
             <div v-for="s in subaccounts">
               <li v-for="x in s.balances">
-                <a>
+                <RouterLink :to="`/${s.account.chainName}/account/${s.account.address}`">
                   <img :src="s.account.logo" class="w-6 h-6 mr-2" />
                   <span class="font-bold">{{ format.formatToken(x, true, '0,0.[00]', 'all') }} <br><span
                       class="text-xs" :class="format.color(x.change24h)">{{ format.formatNumber(x.change24h, '+0.[00]')
@@ -337,14 +333,14 @@ async function loadBalances(endpoint: string, address: string) {
                   <span class="float-right text-right">${{ format.formatNumber(x.value, '0,0.[00]') }}<br><span
                       class="text-xs" :class="format.color(x.change24h)">{{ format.formatNumber((x.change24h || 0) *
                         (x.value || 0) / 100, '+0,0.[00]') }}</span></span>
-                </a>
+                </RouterLink>
               </li>
             </div>
           </ul>
         </div>
       </div>
 
-      <div class=" text-center bg-base-100 rounded-xl my-4 p-4">
+      <div class=" text-center bg-base-100 rounded-md my-4 p-4">
         <a href="#address-modal"
           class="inline-flex items-center ml-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
           <svg class="-ml-0.5 mr-1.5 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -363,10 +359,10 @@ async function loadBalances(endpoint: string, address: string) {
     <!-- Put this part before </body> tag -->
     <div class="modal" id="address-modal">
       <div class="modal-box">
+        <a href="#" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</a>
         <h3 class="font-bold text-lg mb-2">Derive Account From Address</h3>
-
-        <div>
-          <label class="input-group input-group-sm w-full">
+        <div v-show="importStep === 'step1'">
+          <label class="hidden input-group input-group-sm w-full">
             <span>Connected</span>
             <select v-model="selectedSource" class="select select-bordered select-sm w-3/4">
               <option v-for="source in sourceOptions" :value="source">
@@ -374,12 +370,16 @@ async function loadBalances(endpoint: string, address: string) {
               </option>
             </select>
           </label>
-          <label class="input-group input-group-sm my-2">
-            <span>Custom</span>
-            <input v-model="sourceAddress" class="input input-bordered w-full input-sm" placeholder="Input an address" />
+          <ul class="menu">
+            <li v-for="source in sourceOptions" @click="selectedSource = source; importStep = 'step2'">
+              <a><label class="overflow-hidden flex flex-col"><div class=" font-bold">{{ source.cosmosAddress }} </div><div class="text-xs">{{ source.hdPath }}</div></label></a>
+            </li>
+          </ul>
+          <label class="my-2 p-2">
+            <input v-model="sourceAddress" class="input input-bordered w-full input-sm" placeholder="Input an address" @change="importStep = 'step2'" />
           </label>
         </div>
-        <div class="py-4 max-h-72 overflow-y-auto">
+        <div v-show="importStep === 'step2'" class="py-4 max-h-72 overflow-y-auto">
           <table class="table table-compact">
             <tr v-for="acc in availableAccount">
               <td>
@@ -412,7 +412,7 @@ async function loadBalances(endpoint: string, address: string) {
           </table>
         </div>
         <div class="modal-action mt-2 mb-0">
-          <a href="#" class="btn btn-primary btn-sm">Close</a>
+          <a href="#" class="btn btn-primary btn-sm" @click="importStep = 'step1'">Close</a>
         </div>
       </div>
     </div>

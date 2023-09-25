@@ -1,18 +1,24 @@
 <script lang="ts" setup>
 import {
     useBaseStore,
+    useBlockchain,
     useFormatter,
+    useMintStore,
     useStakingStore,
     useTxDialog,
 } from '@/stores';
 import { computed } from '@vue/reactivity';
-import { onMounted, ref, type DebuggerEvent } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
-import type { Key, Validator } from '@/types';
+import type { Key, SlashingParam, Validator } from '@/types';
+import { formatSeconds}  from '@/libs/utils'
 
 const staking = useStakingStore();
+const base = useBaseStore();
 const format = useFormatter();
 const dialog = useTxDialog();
+const chainStore = useBlockchain();
+const mintStore = useMintStore()
 
 const cache = JSON.parse(localStorage.getItem('avatars') || '{}');
 const avatars = ref(cache || {});
@@ -20,11 +26,15 @@ const latest = ref({} as Record<string, number>);
 const yesterday = ref({} as Record<string, number>);
 const tab = ref('active');
 const unbondList = ref([] as Validator[]);
-const base = useBaseStore();
+const slashing =ref({} as SlashingParam)
+
 onMounted(() => {
-    staking.fetchInacitveValdiators().then((x) => {
-        unbondList.value = x;
+    staking.fetchInacitveValdiators().then((res) => {
+        unbondList.value = res;
     });
+    chainStore.rpc.getSlashingParams().then(res => {
+        slashing.value = res.params
+    })
 });
 
 async function fetchChange() {
@@ -107,11 +117,25 @@ const calculateRank = function (position: number) {
     }
 };
 
+function isFeatured(endpoints: string[], who?: {website?: string, moniker: string }) {
+    if(!endpoints || !who) return false
+    return endpoints.findIndex(x => who.website && who.website?.substring(0, who.website?.lastIndexOf('.')).endsWith(x) || who?.moniker?.toLowerCase().search(x.toLowerCase()) > -1) > -1
+}
+
 const list = computed(() => {
     if (tab.value === 'active') {
-        return staking.validators.map((x, i) => ({v: x, rank: calculateRank(i)}));
+        return staking.validators.map((x, i) => ({v: x, rank: calculateRank(i), logo: logo(x.description.identity)}));
+    } else if (tab.value === 'featured') {
+        const endpoint = chainStore.current?.endpoints?.rest?.map(x => x.provider)
+        if(endpoint) {
+            endpoint.push('ping')
+            return staking.validators
+                .filter(x => isFeatured(endpoint, x.description))
+                .map((x, i) => ({v: x, rank: 'primary', logo: logo(x.description.identity)}));
+        }
+        return []        
     }
-    return unbondList.value.map((x, i) => ({v: x, rank: 'primary'}));
+    return unbondList.value.map((x, i) => ({v: x, rank: 'primary', logo: logo(x.description.identity)}));
 });
 
 const loadAvatars = () => {
@@ -150,7 +174,7 @@ const loadAvatars = () => {
 };
 
 const logo = (identity?: string) => {
-    if (!identity) return '';
+    if (!identity || !avatars.value[identity]) return '';
     const url = avatars.value[identity] || '';
     return url.startsWith('http')
         ? url
@@ -161,20 +185,78 @@ fetchChange();
 loadAvatars();
 </script>
 <template>
+<div>
+    <div class="bg-base-100 rounded-lg grid sm:grid-cols-1 md:grid-cols-4 p-4" >    
+        <div class="flex">
+            <span>
+                <div class="relative w-9 h-9 rounded overflow-hidden flex items-center justify-center mr-2">
+                    <Icon class="text-success" icon="mdi:trending-up" size="32" />
+                    <div class="absolute top-0 left-0 bottom-0 right-0 opacity-20 bg-success"></div>
+                </div>
+            </span>
+            <span>
+                <div class="font-bold">{{ format.percent(mintStore.inflation) }}</div>
+                <div class="text-xs">{{ $t('staking.inflation') }}</div>
+            </span>
+        </div>
+        <div class="flex">
+            <span>
+                <div class="relative w-9 h-9 rounded overflow-hidden flex items-center justify-center mr-2">
+                    <Icon class="text-primary" icon="mdi:lock-open-outline" size="32" />
+                    <div class="absolute top-0 left-0 bottom-0 right-0 opacity-20 bg-primary"></div>
+                </div>
+            </span>
+            <span>
+                <div class="font-bold">{{ formatSeconds(staking.params?.unbonding_time) }}</div>
+                <div class="text-xs">{{ $t('staking.unbonding_time') }}</div>
+            </span>
+        </div> 
+        <div class="flex">
+            <span>
+                <div class="relative w-9 h-9 rounded overflow-hidden flex items-center justify-center mr-2">
+                    <Icon class="text-error" icon="mdi:alert-octagon-outline" size="32" />
+                    <div class="absolute top-0 left-0 bottom-0 right-0 opacity-20 bg-error"></div>
+                </div>
+            </span>
+            <span>
+            <div class="font-bold">{{ format.percent(slashing.slash_fraction_double_sign) }}</div>
+            <div class="text-xs">{{ $t('staking.double_sign_slashing') }}</div>
+            </span>
+        </div> 
+        <div class="flex">
+            <span>
+                <div class="relative w-9 h-9 rounded overflow-hidden flex items-center justify-center mr-2">
+                    <Icon class="text-error" icon="mdi:pause" size="32" />
+                    <div class="absolute top-0 left-0 bottom-0 right-0 opacity-20 bg-error"></div>
+                </div>
+            </span>
+            <span>
+            <div class="font-bold">{{ format.percent(slashing.slash_fraction_downtime) }}</div>
+            <div class="text-xs">{{ $t('staking.downtime_slashing') }}</div>
+            </span>
+        </div>  
+    </div>
+
     <div>
-        <div class="flex items-center justify-between">
-            <div class="tabs tabs-boxed bg-transparent mb-4">
+        <div class="flex items-center justify-between py-1">
+            <div class="tabs tabs-boxed bg-transparent">
+                <a
+                    class="tab text-gray-400"
+                    :class="{ 'tab-active': tab === 'featured' }"
+                    @click="tab = 'featured'"
+                    >{{ $t('staking.popular') }}</a
+                >
                 <a
                     class="tab text-gray-400"
                     :class="{ 'tab-active': tab === 'active' }"
                     @click="tab = 'active'"
-                    >Active</a
+                    >{{ $t('staking.active') }}</a
                 >
                 <a
                     class="tab text-gray-400"
                     :class="{ 'tab-active': tab === 'inactive' }"
                     @click="tab = 'inactive'"
-                    >Inactive</a
+                    >{{ $t('staking.inactive') }}</a
                 >
             </div>
 
@@ -190,20 +272,21 @@ loadAvatars();
                         <tr>
                             <th
                                 scope="col"
+                                class="uppercase"
                                 style="width: 3rem; position: relative"
                             >
-                                #
+                            {{ $t('staking.rank') }}    
                             </th>
-                            <th scope="col">VALIDATOR</th>
-                            <th scope="col" class="text-right">VOTING POWER</th>
-                            <th scope="col" class="text-right">24h CHANGES</th>
-                            <th scope="col" class="text-right">COMMISSION</th>
-                            <th scope="col" class="text-center">ACTIONS</th>
+                            <th scope="col" class="uppercase">{{ $t('staking.validator') }}</th>
+                            <th scope="col" class="text-right uppercase">{{ $t('staking.voting_power') }}</th>
+                            <th scope="col" class="text-right uppercase">{{ $t('staking.24h_changes') }}</th>
+                            <th scope="col" class="text-right uppercase">{{ $t('staking.commission') }}</th>
+                            <th scope="col" class="text-center uppercase">{{ $t('staking.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr
-                            v-for="({v, rank}, i) in list"
+                            v-for="({v, rank, logo}, i) in list"
                             :key="v.operator_address"
                             class="hover:bg-gray-100 dark:hover:bg-[#384059]"
                         >
@@ -224,7 +307,7 @@ loadAvatars();
                             <td>
                                 <div
                                     class="flex items-center overflow-hidden"
-                                    style="max-width: 400px"
+                                    style="max-width: 300px"
                                 >
                                     <div
                                         class="avatar mr-4 relative w-8 h-8 rounded-full overflow-hidden"
@@ -234,12 +317,8 @@ loadAvatars();
                                         ></div>
                                         <div class="w-8 h-8 rounded-full">
                                             <img
-                                                v-if="v.description?.identity"
-                                                v-lazy="
-                                                    logo(
-                                                        v.description?.identity
-                                                    )
-                                                "
+                                                v-if="logo"
+                                                :src="logo"
                                                 class="object-contain"
                                             />
                                             <Icon
@@ -247,11 +326,12 @@ loadAvatars();
                                                 class="text-4xl"
                                                 :icon="`mdi-help-circle-outline`"
                                             />
+                                            
                                         </div>
                                     </div>
 
                                     <div class="flex flex-col">
-                                        <h6 class="text-sm text-primary dark:invert">
+                                        <span class="text-sm text-primary dark:invert whitespace-nowrap overflow-hidden">
                                             <RouterLink
                                                 :to="{
                                                     name: 'chain-staking-validator',
@@ -260,11 +340,11 @@ loadAvatars();
                                                             v.operator_address,
                                                     },
                                                 }"
-                                                class="font-weight-medium user-list-name"
+                                                class="font-weight-medium"
                                             >
                                                 {{ v.description?.moniker }}
                                             </RouterLink>
-                                        </h6>
+                                        </span>
                                         <span class="text-xs">{{
                                             v.description?.website ||
                                             v.description?.identity ||
@@ -277,7 +357,7 @@ loadAvatars();
                             <!-- 👉 Voting Power -->
                             <td class="text-right">
                                 <div class="flex flex-col">
-                                    <h6 class="text-sm font-weight-medium">
+                                    <h6 class="text-sm font-weight-medium whitespace-nowrap ">
                                         {{
                                             format.formatToken(
                                                 {
@@ -321,10 +401,10 @@ loadAvatars();
                                     v-if="v.jailed"
                                     class="badge badge-error gap-2 text-white"
                                 >
-                                    Jailed
+                                {{ $t('staking.jailed') }}
                                 </div>
                                 <label
-                                    v-else-if="rank !== 'error'"
+                                    v-else
                                     for="delegate"
                                     class="btn btn-xs btn-primary rounded-sm capitalize"
                                     @click="
@@ -333,7 +413,7 @@ loadAvatars();
                                                 v.operator_address,
                                         })
                                     "
-                                    >Delegate</label
+                                    >{{ $t('account.btn_delegate') }}</label
                                 >
                             </td>
                         </tr>
@@ -342,14 +422,14 @@ loadAvatars();
             </div>
 
             <div class="divider"></div>
-            <div class="flex flex-row">
+            <div class="flex flex-row items-center">
                 <div
                     class="text-xs truncate relative py-2 px-4 rounded-md w-fit text-error mr-2"
                 >
                     <span
                         class="inset-x-0 inset-y-0 opacity-10 absolute bg-error"
                     ></span>
-                    Top 33%
+                    {{ $t('staking.top') }} 33%
                 </div>
                 <div
                     class="text-xs truncate relative py-2 px-4 rounded-md w-fit text-warning"
@@ -357,11 +437,15 @@ loadAvatars();
                     <span
                         class="inset-x-0 inset-y-0 opacity-10 absolute bg-warning"
                     ></span>
-                    Top 67%
+                    {{ $t('staking.top') }} 67%
+                </div>
+                <div class="text-xs hidden md:!block pl-2">
+                    {{ $t('staking.description') }}
                 </div>
             </div>
         </div>
     </div>
+</div>
 </template>
 
 <route>

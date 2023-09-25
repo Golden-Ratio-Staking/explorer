@@ -149,6 +149,7 @@ export interface RequestRegistry extends AbstractRegistry {
   ibc_core_connection_connections: Request<PaginatedIBCConnections>;
   ibc_core_connection_connections_connection_id: Request<ConnectionWithProof>;
   ibc_core_connection_connections_connection_id_client_state: Request<ClientStateWithProof>;
+  interchain_security_ccv_provider_validator_consumer_addr: Request<{consumer_address: string}>
 }
 
 export function adapter<T>(source: any): T {
@@ -185,28 +186,26 @@ export function findApiProfileByChain(
   // if (!url) {
   //   throw new Error(`Unsupported version or name: ${name}`);
   // }
-
   return url;
 }
 
 export function findApiProfileBySDKVersion(
   version: string,
-): RequestRegistry {
+): RequestRegistry | undefined {
   let closestVersion: string | null = null;
 
-  for (const key in VERSION_REGISTRY) {
-    if (semver.satisfies(key, version)) {
+  for (const k in VERSION_REGISTRY) {
+    const key = k.replace('v', "")
+    // console.log(semver.gt(key, version), semver.gte(version, key), key, version)
+    if (semver.lte(key, version)) {
       if (!closestVersion || semver.gt(key, closestVersion)) {
-        closestVersion = key;
+        closestVersion = k;
       }
     }
   }
-
+  // console.log(`Closest version to ${version}: ${closestVersion}`, VERSION_REGISTRY);
   if (!closestVersion) {
-    throw new Error(`Unsupported version: ${version}`);
+    return undefined;
   }
-
-  console.log(`Closest version to ${version}: ${closestVersion}`);
-
   return VERSION_REGISTRY[closestVersion];
 }
